@@ -11,6 +11,7 @@ Design:
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from hindsight_client import Hindsight
 from groq import Groq
 
@@ -18,6 +19,18 @@ from groq import Groq
 HINDSIGHT_BASE_URL = "https://api.hindsight.vectorize.io"
 DEFAULT_BANK_ID = "pm-fintrack-demo"
 GROQ_MODEL = "openai/gpt-oss-120b"
+
+# hindsight_client's sync methods internally call loop.run_until_complete().
+# In environments that already have a running/cached event loop (e.g. Streamlit),
+# this raises "Timeout context manager should be used inside a task". Running each
+# Hindsight call in its own thread gives it a fresh event loop and avoids the clash.
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _run_isolated(fn, *args, **kwargs):
+    """Run a sync hindsight_client call in a separate thread with its own event loop."""
+    future = _executor.submit(fn, *args, **kwargs)
+    return future.result()
 
 
 def get_hindsight_client() -> Hindsight:
@@ -33,7 +46,8 @@ def get_groq_client() -> Groq:
 def ensure_bank(client: Hindsight, bank_id: str = DEFAULT_BANK_ID):
     """Create the memory bank if it doesn't exist yet (idempotent-ish)."""
     try:
-        client.create_bank(
+        _run_isolated(
+            client.create_bank,
             bank_id=bank_id,
             name="FinTrack PM Memory",
             mission=(
@@ -55,7 +69,8 @@ def ensure_bank(client: Hindsight, bank_id: str = DEFAULT_BANK_ID):
 
 def retain_log(client: Hindsight, content: str, context: str, tags: list[str],
                 timestamp=None, bank_id: str = DEFAULT_BANK_ID):
-    return client.retain(
+    return _run_isolated(
+        client.retain,
         bank_id=bank_id,
         content=content,
         context=context,
@@ -65,11 +80,11 @@ def retain_log(client: Hindsight, content: str, context: str, tags: list[str],
 
 
 def recall_memories(client: Hindsight, query: str, bank_id: str = DEFAULT_BANK_ID, max_tokens=2048):
-    return client.recall(bank_id=bank_id, query=query, max_tokens=max_tokens)
+    return _run_isolated(client.recall, bank_id=bank_id, query=query, max_tokens=max_tokens)
 
 
 def reflect_on_memories(client: Hindsight, query: str, bank_id: str = DEFAULT_BANK_ID):
-    return client.reflect(bank_id=bank_id, query=query, budget="mid")
+    return _run_isolated(client.reflect, bank_id=bank_id, query=query, budget="mid")
 
 
 def classify_query(groq_client: Groq, question: str) -> str:
