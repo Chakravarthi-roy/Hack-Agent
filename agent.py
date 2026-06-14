@@ -87,71 +87,169 @@ def reflect_on_memories(client: Hindsight, query: str, bank_id: str = DEFAULT_BA
     return _run_isolated(client.reflect, bank_id=bank_id, query=query, budget="mid")
 
 
-def classify_query(groq_client: Groq, question: str) -> str:
-    """
-    Use Groq to decide whether a question needs:
-    - 'recall' : a direct factual lookup ("what did X say", "when did Y happen")
-    - 'reflect': synthesis/reasoning across multiple memories ("what risks should I flag",
-                  "what patterns have come up", "what should I prioritize")
-    """
-    prompt = (
-        "Classify the following Product Manager question into exactly one word: "
-        "'recall' or 'reflect'.\n\n"
-        "'recall' = the question asks for a specific fact, event, or past statement "
-        "(who said what, when something happened, status of a specific item).\n"
-        "'reflect' = the question asks for synthesis, patterns, risks, recommendations, "
-        "or reasoning across multiple pieces of information.\n\n"
-        f"Question: {question}\n\n"
-        "Answer with only one word: recall or reflect."
-    )
-    resp = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        max_tokens=10,
-    )
-    answer = resp.choices[0].message.content.strip().lower()
-    return "reflect" if "reflect" in answer else "recall"
+import json
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions exposed to Groq. The LLM decides when/whether to call these,
+# possibly multiple times, possibly both, in any order - based on the actual
+# question, not a pre-classification.
+# ---------------------------------------------------------------------------
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "recall",
+            "description": (
+                "Search the memory bank for specific facts, statements, or events. "
+                "Use this to find concrete details: who said what, when something "
+                "happened, the status of a specific item, a specific decision or "
+                "request. Returns raw memory snippets, each as a separate fact."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A focused search query describing what fact(s) to find.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reflect",
+            "description": (
+                "Ask the memory system to reason over everything it knows and produce "
+                "a synthesized answer. Use this for questions that require connecting "
+                "multiple memories over time: spotting patterns, recurring issues, "
+                "risks, trends, or recommendations. This does its own retrieval AND "
+                "reasoning - it can be used on its own or after recall() to add a "
+                "layer of synthesis on top of specific facts."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The synthesis/reasoning question to pose to the memory system.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
+SYSTEM_PROMPT = (
+    "You are an AI Project Manager assistant for FinTrack, a budgeting app. "
+    "You have access to a long-term memory system (Hindsight) via two tools:\n\n"
+    "- recall(query): retrieves specific facts/memories matching a query.\n"
+    "- reflect(query): performs reasoning over memories to produce synthesized "
+    "insights (patterns, risks, recommendations).\n\n"
+    "For each user question, decide which tool(s) to use - you may call recall, "
+    "reflect, both, or call a tool multiple times with different queries if needed. "
+    "Use recall when the question asks for a specific fact or status. Use reflect "
+    "when the question asks you to synthesize, spot patterns, or recommend something. "
+    "For questions that benefit from both (e.g. 'what risks should I flag' may need "
+    "reflect for synthesis, but recall to ground specific dates/names), feel free to "
+    "call both.\n\n"
+    "Once you have enough information, answer the PM's question directly and "
+    "concisely, using only information returned by the tools. If the tools don't "
+    "have relevant information, say so honestly. Use bullet points for lists."
+)
+
+
+def _execute_tool_call(hindsight_client: Hindsight, name: str, args: dict, bank_id: str):
+    """Execute a single tool call against Hindsight and return a text result."""
+    query = args.get("query", "")
+    if name == "recall":
+        result = recall_memories(hindsight_client, query, bank_id=bank_id)
+        if hasattr(result, "results") and result.results:
+            return "\n".join(f"- {r.text}" for r in result.results)
+        return "No relevant memories found."
+    elif name == "reflect":
+        result = reflect_on_memories(hindsight_client, query, bank_id=bank_id)
+        text = result.text if hasattr(result, "text") else str(result)
+        return text or "No insights generated."
+    else:
+        return f"Unknown tool: {name}"
 
 
 def answer_question(hindsight_client: Hindsight, groq_client: Groq, question: str,
-                     bank_id: str = DEFAULT_BANK_ID):
+                     bank_id: str = DEFAULT_BANK_ID, max_iterations: int = 4):
     """
-    Full pipeline: classify -> hindsight recall/reflect -> Groq final answer.
-    Returns (mode_used, memory_context_text, final_answer_text)
+    Agentic loop: Groq decides which Hindsight tools to call (recall/reflect/both,
+    possibly repeatedly) based on the actual question, then produces a final answer.
+
+    Returns:
+        tool_trace: list of dicts {"tool": str, "args": dict, "result": str}
+                     - every Hindsight operation the agent actually performed.
+        final_answer: str
     """
-    mode = classify_query(groq_client, question)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": question},
+    ]
+    tool_trace = []
 
-    if mode == "reflect":
-        result = reflect_on_memories(hindsight_client, question, bank_id=bank_id)
-        memory_context = result.text if hasattr(result, "text") else str(result)
-        # Reflect already produces a reasoned answer - lightly polish with Groq
-        final_prompt = (
-            "You are an AI assistant helping a Product Manager. Hindsight's memory "
-            "system has already reasoned over past notes and produced this answer:\n\n"
-            f"{memory_context}\n\n"
-            f"Original question: {question}\n\n"
-            "Present this to the PM in a clear, concise way (use bullet points if "
-            "listing multiple items). Do not invent new facts beyond what's given."
+    for _ in range(max_iterations):
+        resp = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=messages,
+            tools=TOOLS,
+            tool_choice="auto",
+            temperature=0.2,
+            max_tokens=1024,
         )
-    else:
-        result = recall_memories(hindsight_client, question, bank_id=bank_id)
-        memory_context = "\n".join(f"- {r.text}" for r in result.results) if hasattr(result, "results") else str(result)
-        final_prompt = (
-            "You are an AI assistant helping a Product Manager. Here are relevant "
-            "memories retrieved from past notes:\n\n"
-            f"{memory_context}\n\n"
-            f"Question: {question}\n\n"
-            "Answer the question directly using only the information above. If the "
-            "memories don't contain a clear answer, say so."
-        )
+        msg = resp.choices[0].message
 
-    final_resp = groq_client.chat.completions.create(
+        if not msg.tool_calls:
+            # No more tools needed - this is the final answer
+            final_answer = (msg.content or "").strip()
+            return tool_trace, final_answer
+
+        # Append the assistant's tool-call message, then execute each tool call
+        messages.append({
+            "role": "assistant",
+            "content": msg.content or "",
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in msg.tool_calls
+            ],
+        })
+
+        for tc in msg.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+
+            result_text = _execute_tool_call(hindsight_client, tc.function.name, args, bank_id)
+            tool_trace.append({
+                "tool": tc.function.name,
+                "args": args,
+                "result": result_text,
+            })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result_text,
+            })
+
+    # Hit max_iterations without a final answer - force one final completion without tools
+    resp = groq_client.chat.completions.create(
         model=GROQ_MODEL,
-        messages=[{"role": "user", "content": final_prompt}],
-        temperature=0.3,
-        max_tokens=512,
+        messages=messages,
+        temperature=0.2,
+        max_tokens=1024,
     )
-    final_answer = final_resp.choices[0].message.content.strip()
-
-    return mode, memory_context, final_answer
+    final_answer = (resp.choices[0].message.content or "").strip()
+    return tool_trace, final_answer

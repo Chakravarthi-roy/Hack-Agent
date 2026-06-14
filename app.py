@@ -264,28 +264,44 @@ with tab_ask:
     )
 
     if st.button("Ask", type="primary") and question.strip():
-        with st.spinner("Thinking... (classifying, then recall/reflect)"):
-            mode, memory_context, answer = answer_question(
+        with st.spinner("Thinking... (agent deciding which memory operations to use)"):
+            tool_trace, answer = answer_question(
                 hindsight_client, groq_client, question.strip()
             )
         st.session_state.chat_history.insert(0, {
             "question": question.strip(),
-            "mode": mode,
-            "memory_context": memory_context,
+            "tool_trace": tool_trace,
             "answer": answer,
         })
 
     st.divider()
 
     for entry in st.session_state.chat_history:
-        badge_class = "mode-badge-reflect" if entry["mode"] == "reflect" else "mode-badge-recall"
-        badge_label = "REFLECT (synthesis)" if entry["mode"] == "reflect" else "RECALL (fact lookup)"
-
         st.markdown(f"**Q: {entry['question']}**")
-        st.markdown(f'<span class="{badge_class}">{badge_label}</span>', unsafe_allow_html=True)
+
+        # Show a badge for each tool call the agent actually made, in order
+        badges_html = ""
+        for call in entry["tool_trace"]:
+            if call["tool"] == "reflect":
+                badges_html += '<span class="mode-badge-reflect">REFLECT (synthesis)</span> '
+            else:
+                badges_html += '<span class="mode-badge-recall">RECALL (fact lookup)</span> '
+        if badges_html:
+            st.markdown(badges_html, unsafe_allow_html=True)
+        else:
+            st.caption("No memory operations were used for this answer.")
+
         st.markdown(entry["answer"])
-        with st.expander("🔍 Show memory used by Hindsight"):
-            st.text(entry["memory_context"])
+
+        with st.expander(f"🔍 Show agent's memory operations ({len(entry['tool_trace'])})"):
+            if not entry["tool_trace"]:
+                st.text("The agent answered without querying memory.")
+            for i, call in enumerate(entry["tool_trace"], 1):
+                st.markdown(f"**{i}. `{call['tool']}`** — query: _{call['args'].get('query', '')}_")
+                st.text(call["result"])
+                if i < len(entry["tool_trace"]):
+                    st.markdown("---")
+
         st.divider()
 
 
