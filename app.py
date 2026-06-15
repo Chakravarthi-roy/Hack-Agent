@@ -36,6 +36,18 @@ st.set_page_config(
     page_title="FinTrack PM Memory Agent",
     page_icon="🧭",
     layout="wide",
+    menu_items={
+        "About": (
+            "## FinTrack — AI Project Manager\n\n"
+            "An AI agent with persistent memory, built on **Hindsight** "
+            "(memory layer) and **Groq** (reasoning).\n\n"
+            "It logs PM notes — standups, stakeholder calls, user research — "
+            "and answers questions by recalling specific facts, reflecting "
+            "to spot patterns and risks, or both, deciding dynamically per "
+            "question.\n\n"
+            "Built for a hackathon focused on AI agents with long-term memory."
+        ),
+    },
 )
 
 CUSTOM_CSS = """
@@ -147,8 +159,7 @@ with st.sidebar:
         st.stop()
 
     st.divider()
-    st.markdown("**Memory bank**")
-    st.code(DEFAULT_BANK_ID, language=None)
+    st.markdown(f"**Memory bank:** `{DEFAULT_BANK_ID}`")
 
     if st.button("🌱 Seed demo data", use_container_width=True):
         with st.spinner("Loading 4 weeks of synthetic PM history..."):
