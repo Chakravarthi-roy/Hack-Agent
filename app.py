@@ -41,16 +41,41 @@ st.set_page_config(
 CUSTOM_CSS = """
 <style>
     .stApp {
-        background-color: #F7F6F3;
+        background-color: #F6F5F1;
     }
     h1, h2, h3 {
         font-family: 'Georgia', serif;
-        color: #1F2A24;
+        color: #1E2D2A;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #1E2D2A;
+    }
+    [data-testid="stSidebar"] * {
+        color: #EDEAE2 !important;
+    }
+    [data-testid="stSidebar"] .stButton button {
+        background-color: #3A5A50;
+        color: #FFFFFF !important;
+        border: none;
+    }
+    [data-testid="stSidebar"] code {
+        color: #C9E4D4 !important;
+        background-color: #2A3D38 !important;
+    }
+    .intro-banner {
+        background-color: #1E2D2A;
+        color: #EDEAE2;
+        border-radius: 10px;
+        padding: 1.1rem 1.4rem;
+        margin-bottom: 1.2rem;
+    }
+    .intro-banner b {
+        color: #9FD8BE;
     }
     .memory-card {
         background-color: #FFFFFF;
         border: 1px solid #E3E0D8;
-        border-left: 4px solid #6B8F71;
+        border-left: 4px solid #4F8067;
         border-radius: 6px;
         padding: 0.75rem 1rem;
         margin-bottom: 0.6rem;
@@ -72,20 +97,22 @@ CUSTOM_CSS = """
         font-size: 0.72rem;
     }
     .mode-badge-recall {
-        background-color: #DCE8E0;
-        color: #2F4A3A;
+        background-color: #DCEAE2;
+        color: #1E2D2A;
         border-radius: 4px;
-        padding: 0.15rem 0.5rem;
+        padding: 0.15rem 0.6rem;
         font-size: 0.75rem;
         font-weight: 600;
+        margin-right: 0.4rem;
     }
     .mode-badge-reflect {
-        background-color: #F0E2D0;
+        background-color: #F3DFC1;
         color: #6E4A23;
         border-radius: 4px;
-        padding: 0.15rem 0.5rem;
+        padding: 0.15rem 0.6rem;
         font-size: 0.75rem;
         font-weight: 600;
+        margin-right: 0.4rem;
     }
 </style>
 """
@@ -107,39 +134,38 @@ if "logged_entries" not in st.session_state:
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 🧭 FinTrack PM Agent")
-    st.caption("AI Project Manager with persistent memory, powered by Hindsight + Groq.")
+    st.caption("AI Project Manager with persistent memory — Hindsight + Groq")
 
     hs_key_set = bool(os.environ.get("HINDSIGHT_API_KEY"))
     groq_key_set = bool(os.environ.get("GROQ_API_KEY"))
 
-    st.markdown("**API Keys**")
-    st.write(f"{'✅' if hs_key_set else '❌'} Hindsight API key")
-    st.write(f"{'✅' if groq_key_set else '❌'} Groq API key")
+    st.markdown("**Connections**")
+    st.write(f"{'✅' if hs_key_set else '❌'} Hindsight")
+    st.write(f"{'✅' if groq_key_set else '❌'} Groq")
 
     if not (hs_key_set and groq_key_set):
         st.error("Set HINDSIGHT_API_KEY and GROQ_API_KEY in your .env file.")
         st.stop()
 
     st.divider()
-    st.markdown("**Memory Bank**")
+    st.markdown("**Memory bank**")
     st.code(DEFAULT_BANK_ID, language=None)
 
-    if st.button("🌱 Seed demo data (4 weeks of logs)", use_container_width=True):
-        with st.spinner("Seeding Hindsight bank with synthetic PM history..."):
+    if st.button("🌱 Seed demo data", use_container_width=True):
+        with st.spinner("Loading 4 weeks of synthetic PM history..."):
             seed(DEFAULT_BANK_ID, verbose=False)
         st.success(f"Seeded {len(LOGS)} memories!")
 
     st.caption(
-        "Seeding loads ~4 weeks of synthetic standups, stakeholder calls, and "
-        "user feedback for FinTrack (a budgeting app). This gives the agent "
-        "history to recall and reflect on."
+        "Loads ~4 weeks of standups, stakeholder calls, and user feedback "
+        "for FinTrack so the agent has history to recall and reflect on."
     )
 
     st.divider()
-    st.markdown("**About this demo**")
+    st.markdown("**The cast**")
     st.caption(
-        "Persona: You are the PM for FinTrack. Team: Marcus (Eng Lead), "
-        "Lena (Designer). Stakeholders: Priya (Head of Product), David (Sales VP)."
+        "Marcus — Eng Lead · Lena — Designer  \n"
+        "Priya — Head of Product · David — Sales VP"
     )
 
 
@@ -160,9 +186,18 @@ hindsight_client, groq_client = init_clients()
 # Header
 # ---------------------------------------------------------------------------
 st.title("FinTrack — AI Project Manager")
-st.caption(
-    "Logs your product notes into long-term memory, then answers questions by "
-    "recalling facts or reflecting across weeks of history."
+
+st.markdown(
+    """
+    <div class="intro-banner">
+    You're the PM for <b>FinTrack</b>, a budgeting app. Your notes from standups,
+    stakeholder calls, and user research are stored in long-term memory
+    (<b>Hindsight</b>). Ask the agent about your product — it decides on its own
+    whether to <b>recall</b> specific facts, <b>reflect</b> to spot patterns and
+    risks, or both.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 tab_log, tab_ask, tab_timeline = st.tabs(["📝 Log a Note", "💬 Ask the Agent", "🧠 Memory Timeline"])
@@ -237,10 +272,7 @@ with tab_log:
 # ---------------------------------------------------------------------------
 with tab_ask:
     st.subheader("Ask about your product")
-    st.caption(
-        "Try a factual recall question (\"What did Priya ask for?\") or a "
-        "synthesis question (\"What risks should I flag this week?\")."
-    )
+    st.caption("Try one of these, or ask your own question:")
 
     example_questions = [
         "What did Priya ask for?",
@@ -321,10 +353,10 @@ with tab_ask:
 # TAB 3: Memory timeline (this session's logs)
 # ---------------------------------------------------------------------------
 with tab_timeline:
-    st.subheader("What's in memory (this session)")
+    st.subheader("What's in memory")
     st.caption(
-        "Entries you've logged in this session. The full history (including the "
-        "seeded 4 weeks) lives in Hindsight and is what powers recall/reflect above."
+        "Logged this session — plus the seeded 4-week history below. "
+        "This is what powers recall and reflect in the Ask tab."
     )
 
     if not st.session_state.logged_entries:
