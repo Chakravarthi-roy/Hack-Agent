@@ -1,15 +1,13 @@
 """
 Seed the Hindsight bank with the synthetic PM logs (data/seed_logs.py).
 
-This simulates "4 weeks of PM notes" so the demo can show the agent
-already having a history to recall/reflect on. Run this once before
-the demo, or use the Streamlit "Reset & Reseed" button.
+Simulates 4 weeks of PM notes so the demo has history to recall/reflect on.
+Run once before the demo, or via the "Seed demo data" button in the sidebar.
 
 Usage:
     python seed_data.py
 """
 
-import os
 from datetime import datetime
 from dotenv import load_dotenv
 

@@ -134,7 +134,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # Session state init
 # ---------------------------------------------------------------------------
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []  # list of dicts: {question, mode, memory_context, answer}
+    st.session_state.chat_history = []  # list of dicts: {question, tool_trace, answer}
 
 if "logged_entries" not in st.session_state:
     st.session_state.logged_entries = []  # entries logged this session (for timeline display)

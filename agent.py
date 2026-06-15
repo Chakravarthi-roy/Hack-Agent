@@ -1,16 +1,12 @@
 """
 Core agent logic: wraps Hindsight (memory) and Groq (LLM reasoning).
 
-Design:
-- One Hindsight bank per "product" (bank_id = e.g. "pm-fintrack").
-- retain() is called whenever the PM logs a note (standup, stakeholder call, feedback).
-- recall() is used for direct factual lookups ("what did Priya ask for?").
-- reflect() is used for synthesis questions ("what risks should I flag this week?").
-- Groq LLM is used to (a) classify whether a question needs recall vs reflect,
-  and (b) produce the final user-facing answer using the memory context Hindsight returns.
+retain() stores PM notes. recall() and reflect() are exposed to Groq as
+tools - the LLM decides per question which to call (one, both, or repeated).
 """
 
 import os
+import json
 from concurrent.futures import ThreadPoolExecutor
 from hindsight_client import Hindsight
 from groq import Groq
@@ -87,13 +83,9 @@ def reflect_on_memories(client: Hindsight, query: str, bank_id: str = DEFAULT_BA
     return _run_isolated(client.reflect, bank_id=bank_id, query=query, budget="mid")
 
 
-import json
-
-
 # ---------------------------------------------------------------------------
-# Tool definitions exposed to Groq. The LLM decides when/whether to call these,
-# possibly multiple times, possibly both, in any order - based on the actual
-# question, not a pre-classification.
+# Tool definitions exposed to Groq - the LLM decides per question whether to
+# call recall, reflect, both, or repeat either, rather than a fixed rule.
 # ---------------------------------------------------------------------------
 TOOLS = [
     {
@@ -183,19 +175,10 @@ def answer_question(hindsight_client: Hindsight, groq_client: Groq, question: st
                      bank_id: str = DEFAULT_BANK_ID, max_iterations: int = 4,
                      on_tool_call=None):
     """
-    Agentic loop: Groq decides which Hindsight tools to call (recall/reflect/both,
-    possibly repeatedly) based on the actual question, then produces a final answer.
+    Agentic loop: Groq decides which Hindsight tools to call, then answers.
 
-    Args:
-        on_tool_call: optional callback invoked as on_tool_call(tool_name, args, result)
-                       immediately after each tool executes. Useful for UI progress
-                       display. Has no effect on the agent's behavior or return value.
-                       Default None - no callback, identical to prior behavior.
-
-    Returns:
-        tool_trace: list of dicts {"tool": str, "args": dict, "result": str}
-                     - every Hindsight operation the agent actually performed.
-        final_answer: str
+    on_tool_call: optional callback(tool_name, args, result) for UI progress.
+    Returns (tool_trace, final_answer) - tool_trace logs every memory op used.
     """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
