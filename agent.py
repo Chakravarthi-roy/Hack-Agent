@@ -180,10 +180,17 @@ def _execute_tool_call(hindsight_client: Hindsight, name: str, args: dict, bank_
 
 
 def answer_question(hindsight_client: Hindsight, groq_client: Groq, question: str,
-                     bank_id: str = DEFAULT_BANK_ID, max_iterations: int = 4):
+                     bank_id: str = DEFAULT_BANK_ID, max_iterations: int = 4,
+                     on_tool_call=None):
     """
     Agentic loop: Groq decides which Hindsight tools to call (recall/reflect/both,
     possibly repeatedly) based on the actual question, then produces a final answer.
+
+    Args:
+        on_tool_call: optional callback invoked as on_tool_call(tool_name, args, result)
+                       immediately after each tool executes. Useful for UI progress
+                       display. Has no effect on the agent's behavior or return value.
+                       Default None - no callback, identical to prior behavior.
 
     Returns:
         tool_trace: list of dicts {"tool": str, "args": dict, "result": str}
@@ -238,6 +245,8 @@ def answer_question(hindsight_client: Hindsight, groq_client: Groq, question: st
                 "args": args,
                 "result": result_text,
             })
+            if on_tool_call is not None:
+                on_tool_call(tc.function.name, args, result_text)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,

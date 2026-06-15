@@ -264,10 +264,22 @@ with tab_ask:
     )
 
     if st.button("Ask", type="primary") and question.strip():
-        with st.spinner("Thinking... (agent deciding which memory operations to use)"):
+        thinking_placeholder = st.empty()
+        live_steps = []
+
+        def _show_progress(tool_name, args, result):
+            icon = "🧩" if tool_name == "reflect" else "🔍"
+            label = "Reflecting" if tool_name == "reflect" else "Recalling"
+            query_preview = args.get("query", "")
+            live_steps.append(f"{icon} {label}: _{query_preview}_")
+            thinking_placeholder.markdown("\n\n".join(live_steps))
+
+        with st.spinner("Agent is thinking..."):
             tool_trace, answer = answer_question(
-                hindsight_client, groq_client, question.strip()
+                hindsight_client, groq_client, question.strip(),
+                on_tool_call=_show_progress,
             )
+        thinking_placeholder.empty()
         st.session_state.chat_history.insert(0, {
             "question": question.strip(),
             "tool_trace": tool_trace,
