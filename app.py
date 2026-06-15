@@ -41,41 +41,40 @@ st.set_page_config(
 CUSTOM_CSS = """
 <style>
     .stApp {
-        background-color: #F6F5F1;
+        background-color: #FAFAF7;
     }
     h1, h2, h3 {
         font-family: 'Georgia', serif;
-        color: #1E2D2A;
+        color: #2E3D38;
     }
     [data-testid="stSidebar"] {
-        background-color: #1E2D2A;
-    }
-    [data-testid="stSidebar"] * {
-        color: #EDEAE2 !important;
+        background-color: #E8F0E9;
+        border-right: 1px solid #D6E3D8;
     }
     [data-testid="stSidebar"] .stButton button {
-        background-color: #3A5A50;
+        background-color: #6FA98C;
         color: #FFFFFF !important;
         border: none;
     }
     [data-testid="stSidebar"] code {
-        color: #C9E4D4 !important;
-        background-color: #2A3D38 !important;
+        color: #2E3D38 !important;
+        background-color: #D6E3D8 !important;
     }
     .intro-banner {
-        background-color: #1E2D2A;
-        color: #EDEAE2;
+        background-color: #EAF4ED;
+        border: 1px solid #CFE6D6;
+        color: #2E3D38;
         border-radius: 10px;
         padding: 1.1rem 1.4rem;
         margin-bottom: 1.2rem;
     }
     .intro-banner b {
-        color: #9FD8BE;
+        color: #3D7A5C;
     }
     .memory-card {
         background-color: #FFFFFF;
         border: 1px solid #E3E0D8;
-        border-left: 4px solid #4F8067;
+        border-left: 4px solid #6FA98C;
         border-radius: 6px;
         padding: 0.75rem 1rem;
         margin-bottom: 0.6rem;
@@ -98,7 +97,7 @@ CUSTOM_CSS = """
     }
     .mode-badge-recall {
         background-color: #DCEAE2;
-        color: #1E2D2A;
+        color: #2E3D38;
         border-radius: 4px;
         padding: 0.15rem 0.6rem;
         font-size: 0.75rem;
