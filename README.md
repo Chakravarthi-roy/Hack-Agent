@@ -1,113 +1,71 @@
-# FinTrack PM Memory Agent
+# FinTrack PM Agent
 
-An AI Project/Product Manager assistant with **persistent memory powered by
-[Hindsight](https://hindsight.vectorize.io)** and reasoning powered by **Groq**.
+A small AI Project Manager assistant built around [Hindsight](https://hindsight.vectorize.io) for long-term memory and Groq for reasoning.
 
-## The idea
+The idea: a PM logs notes after standups, stakeholder calls, and user research. Those notes go into Hindsight. Later, the PM can just ask questions - the agent decides on its own whether it needs to pull up a specific fact, reason across everything it knows, or both.
 
-A PM logs notes after standups, stakeholder calls, and user research sessions.
-These get stored in Hindsight's memory layer. Later, the PM can ask:
+## Why this is interesting
 
-- **Factual recall**: "What did Priya ask for?" → Hindsight `recall`
-- **Synthesis / reasoning**: "What risks should I flag in tomorrow's exec review?" → Hindsight `reflect`
+Most "AI assistant" demos are stateless - every conversation starts from zero. This one isn't. After a few weeks of logs, you can ask things like:
 
-Hindsight connects the dots across weeks of scattered notes — e.g. the same
-API rate-limit blocker mentioned in week 1, week 2, and week 4 gets surfaced
-as a recurring risk worth escalating, even though no single note says "this
-is recurring."
+- "What did Priya ask for?" - pulls the exact request from memory.
+- "What's the status of the export feature?" - pieces together the request, the scoping, and where things stand now, from notes logged on different days.
+- "What risks should I flag in tomorrow's exec review?" - this is the fun one. The same API rate-limit issue gets mentioned across three separate weeks, never explicitly flagged as "recurring" in any single note. The agent connects those dots and surfaces it as a risk on its own.
 
-## Setup
+That last one is really the whole point of using Hindsight here - it's not just storage, it's the thing that turns scattered notes into something useful weeks later.
 
-### 1. Install dependencies
+## How it's built
+
+- `agent.py` - Hindsight + Groq glue. `recall` and `reflect` are exposed to Groq as tools, and the model decides per question what it actually needs.
+- `app.py` - Streamlit UI with three tabs: log a note, ask the agent, and a memory timeline view.
+- `data/seed_logs.py` - ~4 weeks of synthetic logs for a fictional product (FinTrack, a budgeting app) and team, so the agent has history to work with out of the box.
+- `seed_data.py` / `test_connection.py` - helper scripts for loading the seed data and checking your API keys work.
+
+This is scoped to one PM, one product, one small team - on purpose. The goal was to get the memory mechanic working well for a single clear workflow rather than spreading thin across a generic multi-user tool.
+
+## Running it
 
 ```bash
 pip install -r requirements.txt
 ```
 
-(If you hit an "externally managed environment" error, add `--break-system-packages`.)
+If pip complains about an "externally managed environment," add `--break-system-packages`.
 
-### 2. Add your API keys
-
-Copy `.env.example` to `.env` and fill in your keys:
-
-```bash
-cp .env.example .env
-```
+Copy `.env.example` to `.env` and add your keys:
 
 ```
-HINDSIGHT_API_KEY=your-hindsight-cloud-api-key
-GROQ_API_KEY=your-groq-api-key
+HINDSIGHT_API_KEY=...
+GROQ_API_KEY=...
 ```
 
-- Hindsight Cloud key: sign up at https://ui.hindsight.vectorize.io
-- Groq key: https://console.groq.com
+(Hindsight Cloud: https://ui.hindsight.vectorize.io, Groq: https://console.groq.com)
 
-### 3. Test connectivity
+Then check the connection works:
 
 ```bash
 python test_connection.py
 ```
 
-This should print `=== All checks passed! ===` at the end. If it fails,
-check that both keys are set correctly in `.env`.
-
-### 4. Seed the demo data (4 weeks of synthetic PM logs)
+Load the synthetic 4-week dataset (or just click "Seed demo data" in the app sidebar):
 
 ```bash
 python seed_data.py
 ```
 
-This loads ~16 synthetic notes (standups, stakeholder calls, design reviews,
-user research) for a fictional product called **FinTrack** (a budgeting app)
-into a Hindsight memory bank. You can also do this from the app sidebar.
-
-### 5. Run the app
+And run the app:
 
 ```bash
 streamlit run app.py
 ```
 
-## Demo script (suggested)
+## Trying it out
 
-1. **Seed data** from the sidebar (4 weeks of history loads instantly).
-2. Go to **Ask the Agent** tab, try:
-   - *"What did Priya ask for?"* → shows `RECALL` mode, pulls the exact
-     stakeholder request from week 1/3.
-   - *"What's the status of the export feature?"* → recall across multiple
-     entries (request → scoping → status).
-   - *"What risks should I flag in tomorrow's exec review?"* → shows
-     `REFLECT` mode — Hindsight synthesizes the recurring API rate-limit
-     issue across 3 separate weeks into one flagged risk, something no
-     single note states directly.
-3. Go to **Log a Note** tab, add a new note (e.g. a new standup update),
-   then immediately ask a follow-up question that references it — showing
-   memory updates live.
-4. **Memory Timeline** tab shows everything that's been retained, making the
-   memory layer visible and tangible for judges.
+Once seeded, head to the "Ask the Agent" tab and try the example questions, or write your own. Worth trying a few different angles:
 
-## Project structure
+- A direct factual question ("what did David say about the export feature?")
+- A "what should I worry about" question - this is where reflect kicks in and you'll see it pull together things from multiple weeks.
+- Something that's genuinely not in the data ("who's the CEO of FinTrack?") - it should just say it doesn't know, rather than making something up.
 
-```
-.
-├── app.py              # Streamlit UI (3 tabs: Log, Ask, Timeline)
-├── agent.py            # Hindsight + Groq wrapper logic
-├── seed_data.py         # Loads synthetic logs into Hindsight
-├── test_connection.py  # Connectivity check for both APIs
-├── data/
-│   └── seed_logs.py     # Synthetic 4-week dataset for FinTrack
-├── requirements.txt
-└── .env.example
-```
+You can also log a new note yourself and ask about it right after - it's already part of memory by the time you ask.
 
-## Why Hindsight is central here
-
-- **retain**: every PM note (standup, call, feedback) is stored with tags
-  and timestamps.
-- **recall**: factual questions are answered by retrieving the specific
-  relevant memories.
-- **reflect**: synthesis questions trigger Hindsight's reasoning over
-  multiple memories — this is where the "agent gets smarter over time"
-  story is most visible. The recurring API rate-limit blocker (mentioned
-  in weeks 1, 2, and 4) is never explicitly labeled as "recurring" in any
-  single note — only by connecting memories across time does the pattern
-  emerge.
+The "memory operations" expander under each answer shows exactly what the agent searched for and what came back, so it's not a black box.
